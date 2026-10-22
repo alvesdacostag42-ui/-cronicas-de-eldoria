@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Crônicas de Eldoria — Protótipo</title>
+<style>
+:root{--gold:#f2c66d;--panel:#161c26;--line:#596477}
+*{box-sizing:border-box}body{margin:0;background:#0d1118;color:#f5f0df;font-family:system-ui,Arial,sans-serif;display:flex;justify-content:center;min-height:100vh}
+main{width:min(100%,900px);padding:12px}
+h1{font-size:clamp(20px,4vw,30px);margin:4px 0;color:var(--gold);letter-spacing:1px}
+.sub{color:#bac4d2;font-size:13px;margin:0 0 10px}
+#gameWrap{position:relative;border:3px solid #394252;border-radius:8px;overflow:hidden;background:#243b32}
+canvas{display:block;width:100%;height:auto;image-rendering:pixelated;touch-action:none}
+.hud{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.pill{background:var(--panel);border:1px solid var(--line);padding:7px 10px;border-radius:6px;font-size:13px}
+#message{min-height:42px;background:#161c26;border:1px solid #394252;border-radius:6px;padding:10px;font-size:14px;margin:8px 0}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pad,.actions{background:#161c26;border:1px solid #394252;border-radius:8px;padding:8px}
+.padGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;max-width:220px;margin:auto}
+button{background:#293446;color:#fff;border:1px solid #68758a;border-radius:7px;padding:12px 8px;font-weight:700;font-size:15px;touch-action:manipulation}
+button:active{background:#6b5430;transform:translateY(1px)}
+.padGrid button{min-height:44px}.actions{display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:7px}.actions button{flex:1;min-width:90px}
+.help{color:#b7c0ce;font-size:12px;line-height:1.5;margin:10px 2px}
+@media(max-width:520px){main{padding:7px}.controls{grid-template-columns:1fr}.actions{min-height:82px}}
+</style>
+</head>
+<body><main>
+<h1>⚔ CRÔNICAS DE ELDORIA</h1>
+<p class="sub">RPG medieval • Pixel art • Protótipo jogável v0.1</p>
+<div class="hud">
+ <div class="pill">❤️ Vida: <b id="hp">100</b></div>
+ <div class="pill">🪙 Ouro: <b id="gold">0</b></div>
+ <div class="pill">⭐ Nível: <b id="level">1</b></div>
+ <div class="pill">☠ Slimes derrotados: <b id="kills">0</b></div>
+</div>
+<div id="gameWrap"><canvas id="game" width="640" height="400" aria-label="Jogo medieval"></canvas></div>
+<div id="message">Bem-vindo a Eldoria! Explore a floresta, derrote slimes e encontre o baú dourado. ⚔</div>
+<div class="controls">
+ <div class="pad"><div class="padGrid">
+ <span></span><button data-move="up">▲</button><span></span>
+ <button data-move="left">◀</button><button data-move="down">▼</button><button data-move="right">▶</button>
+ </div></div>
+ <div class="actions">
+ <button id="attack">⚔ Atacar</button><button id="potion">🧪 Poção</button><button id="quest">📜 Missão</button>
+ </div>
+</div>
+<p class="help">Computador: WASD ou setas para andar, Espaço para atacar, E para usar poção. Celular: use os botões. Derrote slimes para ganhar ouro e XP. O baú fica perto da cabana, no canto superior direito. O progresso é salvo neste navegador.</p>
+</main>
+<script>
+(()=>{
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+const $=id=>document.getElementById(id);
+const TILE=32, W=640,H=400;
+let player={x:90,y:300,hp:100,maxHp:100,gold:0,level:1,xp:0,kills:0,potions:3,dir:'down',attack:0,inv:0};
+let keys={},enemies=[],chestOpen=false,questDone=false,last=0;
+let messageTimer=0;
+const obstacles=[{x:470,y:35,w:100,h:80,type:'house'},{x:40,y:40,w:64,h:64,type:'tree'},{x:200,y:80,w:45,h:45,type:'tree'},{x:360,y:270,w:50,h:50,type:'tree'},{x:160,y:320,w:50,h:50,type:'tree'}];
+function spawn(){enemies=[];for(let i=0;i<6;i++)enemies.push({x:180+(i%3)*120,y:90+Math.floor(i/3)*140,hp:2,alive:true,cd:0,phase:Math.random()*6})}
+spawn();
+function say(t){$('message').textContent=t;messageTimer=240}
+function updateHud(){ $('hp').textContent=Math.max(0,Math.ceil(player.hp));$('gold').textContent=player.gold;$('level').textContent=player.level;$('kills').textContent=player.kills}
+function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function drawTree(x,y){rect(x+9,y+22,14,16,'#68452e');rect(x+2,y+7,28,23,'#1e5a3e');rect(x+6,y,20,22,'#28714a');rect(x+10,y+5,5,5,'#45945c')}
+function drawHouse(o){rect(o.x,o.y+24,o.w,o.h-24,'#8c6847');rect(o.x-8,o.y+12,o.w+16,22,'#583c3b');rect(o.x+8,o.y+35,o.w-16,13,'#b18a5b');rect(o.x+39,o.y+51,22,32,'#352c2a');rect(o.x+18,o.y+37,17,17,'#a9d8d4')}
+function drawCharacter(x,y,kind,dir='down',attack=0){
+ const skin=kind==='hero'?'#edbd87':'#65d77b', tunic=kind==='hero'?'#4167a4':'#3c9254';
+ rect(x-7,y-4,14,13,kind==='hero'?'#4b3023':'#267141');
+ rect(x-6,y-13,12,12,skin);rect(x-7,y-17,14,6,kind==='hero'?'#4d3024':'#2c8b4b');
+ rect(x-5,y+8,4,9,'#302b3d');rect(x+2,y+8,4,9,'#302b3d');rect(x-8,y+1,16,10,tunic);
+ if(kind==='hero'){rect(x+(dir==='left'?-5:dir==='right'?4:-2),y-9,3,3,'#25232a');if(attack>0){if(dir==='right')rect(x+9,y-8,18,3,'#d8dce4');else if(dir==='left')rect(x-27,y-8,18,3,'#d8dce4');else if(dir==='up')rect(x-1,y-30,3,18,'#d8dce4');else rect(x-1,y+16,3,18,'#d8dce4')}}else{rect(x-4,y-8,3,3,'#18261a');rect(x+2,y-8,3,3,'#18261a');rect(x-9,y-20,18,4,'#b7ff8a')}
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // grass checkerboard
+ for(let y=0;y<H;y+=TILE)for(let x=0;x<W;x+=TILE){rect(x,y,TILE,TILE,((x/TILE+y/TILE)%2)?'#31553c':'#365d40');if((x*7+y*3)%11===0)rect(x+6,y+21,3,3,'#49734a')}
+ // path
+ ctx.fillStyle='#806c4a';ctx.beginPath();ctx.moveTo(55,400);ctx.lineTo(95,280);ctx.lineTo(220,230);ctx.lineTo(400,180);ctx.lineTo(500,120);ctx.lineTo(640,115);ctx.lineTo(640,155);ctx.lineTo(505,157);ctx.lineTo(415,210);ctx.lineTo(230,260);ctx.lineTo(120,310);ctx.lineTo(100,400);ctx.fill();
+ obstacles.forEach(o=>o.type==='tree'?drawTree(o.x,o.y):drawHouse(o));
+ // chest
+ rect(536,132,25,19,chestOpen?'#745333':'#b27a2d');rect(534,128,29,8,'#e9bd52');rect(546,137,5,6,'#f8e7a2');
+ // enemies
+ enemies.forEach(e=>{if(!e.alive)return;drawCharacter(e.x,e.y,'slime');rect(e.x-10,e.y-27,20,4,'#2a2426');rect(e.x-10,e.y-27,10*e.hp,4,'#e35b55')});
+ drawCharacter(player.x,player.y,'hero',player.dir,player.attack);
+ // border/legend
+ rect(8,8,190,24,'#17241edb');ctx.fillStyle='#fff';ctx.font='12px monospace';ctx.fillText('FLORESTA DE ELDORIA',15,24);
+ if(player.hp<=0){rect(0,0,W,H,'#090b10dd');ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 28px monospace';ctx.fillText('VOCÊ CAIU EM BATALHA',W/2,H/2-10);ctx.font='15px monospace';ctx.fillText('Toque em Reiniciar para tentar novamente',W/2,H/2+22);ctx.textAlign='left'}
+}
+function collides(x,y){if(x<14||x>W-14||y<22||y>H-18)return true;for(const o of obstacles){if(x>o.x-14&&x<o.x+o.w+14&&y>o.y-10&&y<o.y+o.h+10)return true}return false}
+function attack(){if(player.hp<=0)return;player.attack=10;let hit=0;for(const e of enemies){if(!e.alive)continue;let dx=e.x-player.x,dy=e.y-player.y,dist=Math.hypot(dx,dy);let facing=(player.dir==='right'&&dx>0&&Math.abs(dy)<35)||(player.dir==='left'&&dx<0&&Math.abs(dy)<35)||(player.dir==='up'&&dy<0&&Math.abs(dx)<35)||(player.dir==='down'&&dy>0&&Math.abs(dx)<35);if(dist<48&&facing){e.hp--;hit++;if(e.hp<=0){e.alive=false;player.gold+=5;player.xp+=1;player.kills++;if(player.xp>=4){player.level++;player.xp=0;player.maxHp+=15;player.hp=player.maxHp;say('Subiu para o nível '+player.level+'! Sua vida foi restaurada. ✨')}else say('Slime derrotado! +5 moedas de ouro.');}}}if(!hit)say('Golpe no ar! Aproxime-se de um slime e vire na direção dele.');updateHud()}
+function usePotion(){if(player.hp<=0)return;if(player.potions<=0){say('Você não tem mais poções.');return}if(player.hp>=player.maxHp){say('Sua vida já está cheia!');return}player.potions--;player.hp=Math.min(player.maxHp,player.hp+35);say('Poção usada! +35 de vida. Restam '+player.potions+'.');updateHud()}
+function mission(){const n=player.kills;if(n>=5){questDone=true;say('Missão concluída: Guardião da Floresta! Recompensa: 25 moedas.');player.gold+=25;updateHud()}else say('Missão: derrote 5 slimes. Progresso: '+n+'/5. Recompensa: 25 moedas.')}
+function tick(t){const dt=Math.min(32,t-last||16);last=t;if(player.hp>0){let dx=0,dy=0;if(keys.ArrowUp||keys.w||keys.up)dy--;if(keys.ArrowDown||keys.s||keys.down)dy++;if(keys.ArrowLeft||keys.a||keys.left)dx--;if(keys.ArrowRight||keys.d||keys.right)dx++;if(dx||dy){const l=Math.hypot(dx,dy);dx=dx/l*2.2*dt/16;dy=dy/l*2.2*dt/16;if(Math.abs(dx)>Math.abs(dy))player.dir=dx>0?'right':'left';else player.dir=dy>0?'down':'up';if(!collides(player.x+dx,player.y))player.x+=dx;if(!collides(player.x,player.y+dy))player.y+=dy}
+ if(player.attack>0)player.attack--;if(player.inv>0)player.inv--;
+ for(const e of enemies){if(!e.alive)continue;e.phase+=dt/500;let vx=player.x-e.x,vy=player.y-e.y,d=Math.hypot(vx,vy);if(d<155&&d>24){let nx=e.x+vx/d*.55*dt/16,ny=e.y+vy/d*.55*dt/16;if(!collides(nx,ny)){e.x=nx;e.y=ny}}else if(d<27&&e.cd<=0){player.hp-=8;player.inv=20;e.cd=850;say('Um slime acertou você! Afaste-se e ataque.');updateHud()}if(e.cd>0)e.cd-=dt}
+ if(Math.hypot(player.x-548,player.y-145)<34&&!chestOpen){chestOpen=true;player.gold+=15;say('Baú encontrado! Você ganhou 15 moedas. ✨');updateHud()}
+ }draw();requestAnimationFrame(tick)}
+document.querySelectorAll('[data-move]').forEach(b=>{const k=b.dataset.move;const on=e=>{e.preventDefault();keys[k]=true};const off=e=>{e.preventDefault();keys[k]=false};b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointerleave',off);b.addEventListener('pointercancel',off)});
+$('attack').addEventListener('click',attack);$('potion').addEventListener('click',usePotion);$('quest').addEventListener('click',mission);
+window.addEventListener('keydown',e=>{let k=e.key;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(k))e.preventDefault();keys[k]=true;if(k===' '&&!e.repeat)attack();if(k.toLowerCase()==='e'&&!e.repeat)usePotion()});
+window.addEventListener('keyup',e=>keys[e.key]=false);
+let saveTimer=0;
+function save(){try{localStorage.setItem('eldoria-save',JSON.stringify({player,chestOpen,questDone}))}catch(e){}}
+function load(){try{const s=JSON.parse(localStorage.getItem('eldoria-save'));if(s&&s.player){player={...player,...s.player};chestOpen=!!s.chestOpen;questDone=!!s.questDone;updateHud();say('Progresso carregado! Boa aventura.')}}catch(e){}}
+const resetBtn=document.createElement('button');resetBtn.textContent='↻ Reiniciar';resetBtn.style.marginTop='8px';resetBtn.style.width='100%';resetBtn.onclick=()=>{localStorage.removeItem('eldoria-save');player={x:90,y:300,hp:100,maxHp:100,gold:0,level:1,xp:0,kills:0,potions:3,dir:'down',attack:0,inv:0};chestOpen=false;questDone=false;spawn();updateHud();say('Nova aventura iniciada! Explore Eldoria.');};document.querySelector('main').appendChild(resetBtn);
+setInterval(save,4000);window.addEventListener('beforeunload',save);load();updateHud();requestAnimationFrame(tick);
+})();
+</script>
+</body></html>
